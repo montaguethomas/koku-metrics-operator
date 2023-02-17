@@ -719,7 +719,7 @@ func (r *MetricsConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			Step:  time.Minute,
 		}
 		collectPromStats(r, cr, dirCfg, timeRange)
-		if startTime.Sub(originalStartTime) == 48*time.Hour {
+		if timeRange.End.Sub(originalStartTime) == 48*time.Hour-1*time.Second {
 			// after collecting 48 hours of data, package the report to compress the files
 			// packaging is guarded by this LastSuccessfulPackagingTime, so setting it to
 			// zero enables packaging to occur thruout this loop

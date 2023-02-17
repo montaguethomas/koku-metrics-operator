@@ -315,3 +315,44 @@ catalog-build: opm
 .PHONY: catalog-push
 catalog-push: ## Push the catalog image.
 	$(MAKE) docker-push IMG=$(CATALOG_IMG)
+
+
+#### downstream code generation
+REMOVE_FILES = koku-metrics-operator/ docs/
+UPSTREAM_LOWERCASE = koku
+UPSTREAM_UPPERCASE = Koku
+DOWNSTREAM_LOWERCASE = costmanagement
+DOWNSTREAM_UPPERCASE = CostManagement
+# sed replace the files to change the api
+
+remove-files:
+	rm -rf $(REMOVE_FILES)
+update-go-mod:
+	go mod tidy
+	go mod vendor
+
+generate-downstream:
+	# convert upstream to downstream
+	- sed -i -- 's/$(UPSTREAM_UPPERCASE)/$(DOWNSTREAM_UPPERCASE)/' $(shell find api config -maxdepth 3 -type f)
+	- sed -i -- 's/$(UPSTREAM_LOWERCASE)/$(DOWNSTREAM_LOWERCASE)/' $(shell find api config -maxdepth 3 -type f)
+	# - sed -i -- 's/$(UPSTREAM_LOWERCASE)/$(DOWNSTREAM_LOWERCASE)/g' api/*(.) config/*(.)
+	- sed -i -- 's/NamePrefix = "koku"/NamePrefix = "costmanagement"/' packaging/packaging.go
+	- sed -i -- 's/ca-certificates.crt/ca-bundle.crt/' crhchttp/http_cloud_dot_redhat.go
+	- sed -i -- 's/isCertified bool = false/isCertified bool = true/' packaging/packaging.go
+	- sed -i -- 's/group: koku-metrics-cfg/group: costmanagement-metrics-cfg/' PROJECT
+	- sed -i -- 's/kind: KokuMetricsConfig/kind: CostManagementMetricsConfig/' PROJECT
+#
+
+downstream: remove-files update-go-mod generate-downstream generate manifests
+	# clean up the other files
+	- git clean -fx
+	# mv the sample to the correctly named file
+	# cp config/samples/koku-metrics-cfg_v1beta1_kokumetricsconfig.yaml config/samples/costmanagement-metrics-cfg_v1beta1_costmanagementmetricsconfig.yaml
+	sleep 1
+	for i in $(shell find config -maxdepth 3 -type f -path '*koku*'); do \
+		cp "$$i" "`echo $$i | sed "s/$(UPSTREAM_LOWERCASE)/$(DOWNSTREAM_LOWERCASE)/"`" ; \
+	done
+
+deploy-user-scratch: manifests kustomize
+	cd config/manager && $(KUSTOMIZE) edit set image controller=quay.io/${USER}/scratchbuild:latest
+	$(KUSTOMIZE) build config/default | kubectl apply -f -
