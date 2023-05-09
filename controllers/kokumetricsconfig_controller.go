@@ -68,7 +68,6 @@ type MetricsConfigReconciler struct {
 	Namespace string
 
 	apiReader                     client.Reader
-	cvClientBuilder               cv.ClusterVersionBuilder
 	promCollector                 *collector.PrometheusCollector
 	disablePreviousDataCollection bool
 	overrideSecretPath            bool
@@ -171,21 +170,23 @@ func GetClientset() (*kubernetes.Clientset, error) {
 	return clientset, nil
 }
 
-// GetClusterID Collects the cluster identifier and version from the Cluster Version custom resource object
-func GetClusterID(r *MetricsConfigReconciler, cr *metricscfgv1beta1.MetricsConfig) error {
-	log := log.WithName("GetClusterID")
-	// Get current ClusterVersion
-	cvClient := r.cvClientBuilder.New(r.Client)
-	clusterVersion, err := cvClient.GetClusterVersion()
+// setClusterID Collects the cluster identifier and version from the Cluster Version custom resource object
+func setClusterID(ctx context.Context, r *MetricsConfigReconciler, cr *metricscfgv1beta1.MetricsConfig) error {
+	if cr.Status.ClusterID != "" && cr.Status.ClusterVersion != "" {
+		return nil
+	}
+
+	cvClient := cv.NewCVClient(r.Client)
+	clusterVersion, err := cvClient.GetClusterVersion(ctx)
 	if err != nil {
 		return err
 	}
-	log.Info("cluster version found", "ClusterVersion", clusterVersion.Spec)
+	log.Info("cluster version found", "ClusterID", clusterVersion.Spec.ClusterID, "ClusterVersion", clusterVersion.Status.Desired.Version)
 	if clusterVersion.Spec.ClusterID != "" {
 		cr.Status.ClusterID = string(clusterVersion.Spec.ClusterID)
 	}
-	if clusterVersion.Spec.Channel != "" {
-		cr.Status.ClusterVersion = string(clusterVersion.Spec.Channel)
+	if clusterVersion.Status.Desired.Version != "" {
+		cr.Status.ClusterVersion = string(clusterVersion.Status.Desired.Version)
 	}
 	return nil
 }
@@ -303,15 +304,6 @@ func checkCycle(log gologr.Logger, cycle int64, lastExecution metav1.Time, actio
 	log.Info(fmt.Sprintf("not time to execute the %s", action))
 	return false
 
-}
-
-func setClusterID(r *MetricsConfigReconciler, cr *metricscfgv1beta1.MetricsConfig) error {
-	if cr.Status.ClusterID == "" || cr.Status.ClusterVersion == "" {
-		r.cvClientBuilder = cv.NewBuilder()
-		err := GetClusterID(r, cr)
-		return err
-	}
-	return nil
 }
 
 func setAuthentication(r *MetricsConfigReconciler, authConfig *crhchttp.AuthConfig, cr *metricscfgv1beta1.MetricsConfig, reqNamespace types.NamespacedName) error {
@@ -592,7 +584,7 @@ func (r *MetricsConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// set the cluster ID & return if there are errors
-	if err := setClusterID(r, cr); err != nil {
+	if err := setClusterID(ctx, r, cr); err != nil {
 		log.Error(err, "failed to obtain clusterID")
 		if err := r.Status().Update(ctx, cr); err != nil {
 			log.Error(err, "failed to update MetricsConfig status")
