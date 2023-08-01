@@ -2,6 +2,35 @@
 	{
 		"metric": {
 			"namespace": "openshift-metering",
+			"node": "ip-10-0-150-20.us-east-2.compute.internal",
+			"pod": "hive-server-0"
+		},
+		"values": [
+			[
+				1604685600,
+				"660586496"
+			],
+			[
+				1604685660,
+				"660578304"
+			],
+			[
+				1604685720,
+				"668798976"
+			],
+			[
+				1604685780,
+				"668880896"
+			],
+			[
+				1604685840,
+				"668889088"
+			]
+		]
+	},
+	{
+		"metric": {
+			"namespace": "new-openshift-metering",
 			"node": "ip-10-0-189-61.us-east-2.compute.internal",
 			"pod": "hive-server-0"
 		},

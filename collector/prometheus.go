@@ -206,32 +206,39 @@ func (c *PrometheusCollector) GetPromConn(
 	return nil
 }
 
+func queryRange(ctx context.Context, pc PrometheusConnection, tr promv1.Range, query string) (model.Matrix, error) {
+	log := log.WithName("queryRange")
+	queryResult, warnings, err := pc.QueryRange(ctx, query, tr)
+	if err != nil {
+		return nil, fmt.Errorf("query: %s: error querying prometheus: %v", query, err)
+	}
+	if len(warnings) > 0 {
+		log.Info("query warnings", "Warnings", warnings)
+	}
+	matrix, ok := queryResult.(model.Matrix)
+	if !ok {
+		return nil, fmt.Errorf("expected a matrix in response to query, got a %v", queryResult.Type())
+	}
+	return matrix, nil
+}
+
 func (c *PrometheusCollector) getQueryRangeResults(queries *querys, results *mappedResults) error {
-	log := log.WithName("getQueryRangeResults")
-
 	for _, query := range *queries {
-		ctx, cancel := context.WithTimeout(context.Background(), c.ContextTimeout)
-		defer cancel()
-
 		if query.Chunked {
 			chunkedTimeRange := promv1.Range{Step: c.TimeSeries.Step}
 			aggResult := map[model.Fingerprint]*model.SampleStream{}
 			aggMatrix := model.Matrix{}
-			for _, v := range [12]int{0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55} {
-				t := c.TimeSeries.Start
-				chunkedTimeRange.Start = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), v, 0, 0, t.Location())
-				chunkedTimeRange.End = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), v+4, 59, 0, t.Location())
-				queryResult, warnings, err := c.PromConn.QueryRange(ctx, query.QueryString, chunkedTimeRange)
+			for _, v := range [12]time.Duration{0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55} {
+				ctx, cancel := context.WithTimeout(context.Background(), c.ContextTimeout)
+				defer cancel()
+				chunkedTimeRange.Start = c.TimeSeries.Start.Add(v * time.Minute)
+				chunkedTimeRange.End = c.TimeSeries.Start.Add(v*time.Minute + 4*time.Minute + 59*time.Second)
+				matrix, err := queryRange(ctx, c.PromConn, chunkedTimeRange, query.QueryString)
+
 				if err != nil {
-					return fmt.Errorf("query: %s: error querying prometheus: %v", query.QueryString, err)
+					return fmt.Errorf("getQueryRangeResults error: %v", err)
 				}
-				if len(warnings) > 0 {
-					log.Info("query warnings", "Warnings", warnings)
-				}
-				matrix, ok := queryResult.(model.Matrix)
-				if !ok {
-					return fmt.Errorf("expected a matrix in response to query, got a %v", queryResult.Type())
-				}
+
 				for _, ss := range matrix {
 					key := ss.Metric.Fingerprint()
 					if aggResult[key] == nil {
@@ -252,16 +259,12 @@ func (c *PrometheusCollector) getQueryRangeResults(queries *querys, results *map
 			results.iterateMatrix(aggMatrix, query)
 
 		} else {
-			queryResult, warnings, err := c.PromConn.QueryRange(ctx, query.QueryString, *c.TimeSeries)
+			ctx, cancel := context.WithTimeout(context.Background(), c.ContextTimeout)
+			defer cancel()
+			matrix, err := queryRange(ctx, c.PromConn, *c.TimeSeries, query.QueryString)
+
 			if err != nil {
-				return fmt.Errorf("query: %s: error querying prometheus: %v", query.QueryString, err)
-			}
-			if len(warnings) > 0 {
-				log.Info("query warnings", "Warnings", warnings)
-			}
-			matrix, ok := queryResult.(model.Matrix)
-			if !ok {
-				return fmt.Errorf("expected a matrix in response to query, got a %v", queryResult.Type())
+				return fmt.Errorf("getQueryRangeResults error: %v", err)
 			}
 			results.iterateMatrix(matrix, query)
 		}
