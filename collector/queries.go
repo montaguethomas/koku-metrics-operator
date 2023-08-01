@@ -167,6 +167,7 @@ var (
 		query{
 			Name:        "pod-limit-cpu-cores",
 			QueryString: QueryMap["cost:pod_limit_cpu_cores"],
+			Chunked:     true,
 			MetricKey:   staticFields{"pod": "pod", "namespace": "namespace", "node": "node"},
 			QueryValue: &saveQueryValue{
 				ValName:         "pod-limit-cpu-cores",
@@ -178,6 +179,7 @@ var (
 		query{
 			Name:        "pod-limit-memory-bytes",
 			QueryString: QueryMap["cost:pod_limit_memory_bytes"],
+			Chunked:     true,
 			MetricKey:   staticFields{"pod": "pod", "namespace": "namespace", "node": "node"},
 			QueryValue: &saveQueryValue{
 				ValName:         "pod-limit-memory-bytes",
@@ -189,6 +191,7 @@ var (
 		query{
 			Name:        "pod-request-cpu-cores",
 			QueryString: QueryMap["cost:pod_request_cpu_cores"],
+			Chunked:     true,
 			MetricKey:   staticFields{"pod": "pod", "namespace": "namespace", "node": "node"},
 			QueryValue: &saveQueryValue{
 				ValName:         "pod-request-cpu-cores",
@@ -200,6 +203,7 @@ var (
 		query{
 			Name:        "pod-request-memory-bytes",
 			QueryString: QueryMap["cost:pod_request_memory_bytes"],
+			Chunked:     true,
 			MetricKey:   staticFields{"pod": "pod", "namespace": "namespace", "node": "node"},
 			QueryValue: &saveQueryValue{
 				ValName:         "pod-request-memory-bytes",
@@ -211,6 +215,7 @@ var (
 		query{
 			Name:        "pod-usage-cpu-cores",
 			QueryString: QueryMap["cost:pod_usage_cpu_cores"],
+			Chunked:     true,
 			MetricKey:   staticFields{"pod": "pod", "namespace": "namespace", "node": "node"},
 			QueryValue: &saveQueryValue{
 				ValName:         "pod-usage-cpu-cores",
@@ -222,6 +227,7 @@ var (
 		query{
 			Name:        "pod-usage-memory-bytes",
 			QueryString: QueryMap["cost:pod_usage_memory_bytes"],
+			Chunked:     true,
 			MetricKey:   staticFields{"pod": "pod", "namespace": "namespace", "node": "node"},
 			QueryValue: &saveQueryValue{
 				ValName:         "pod-usage-memory-bytes",
@@ -475,6 +481,7 @@ type querys []query
 
 type query struct {
 	Name           string
+	Chunked        bool
 	QueryString    string
 	MetricKey      staticFields
 	MetricKeyRegex regexFields
