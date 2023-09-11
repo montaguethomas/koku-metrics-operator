@@ -279,7 +279,7 @@ var _ = Describe("MetricsConfigController - CRD Handling", Ordered, func() {
 		mockpconn *mocks.MockPrometheusConnection
 
 		testConfigMap *corev1.ConfigMap
-		instCopy      *metricscfgv1beta1.KokuMetricsConfig
+		instCopy      *metricscfgv1beta1.MetricsConfig
 		testPVC       *corev1.PersistentVolumeClaim
 		checkPVC      bool = true
 	)
@@ -533,7 +533,7 @@ var _ = Describe("MetricsConfigController - CRD Handling", Ordered, func() {
 			})
 			It("default CR works fine", func() {
 				instCopy.Spec.APIURL = validTS.URL
-				instCopy.Spec.Source.SourceName = "INSERT-SOURCE-NAME"
+				instCopy.Spec.Source.SourceName = ""
 				createObject(ctx, instCopy)
 
 				fetched := &metricscfgv1beta1.MetricsConfig{}
@@ -551,6 +551,7 @@ var _ = Describe("MetricsConfigController - CRD Handling", Ordered, func() {
 				Expect(fetched.Status.OperatorCommit).To(Equal(GitCommit))
 				Expect(fetched.Status.Prometheus.ContextTimeout).To(Equal(&defaultContextTimeout))
 				Expect(*fetched.Status.Source.SourceDefined).To(BeFalse())
+				Expect(fetched.Status.Source.SourceName).To(Equal(clusterID))
 				Expect(fetched.Status.Source.SourceError).ToNot(Equal(""))
 				Expect(fetched.Status.Upload.UploadWait).ToNot(BeNil())
 			})
