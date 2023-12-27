@@ -3,8 +3,8 @@
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-PREVIOUS_VERSION ?= 3.0.0
-VERSION ?= 3.0.1
+PREVIOUS_VERSION ?= 3.1.0
+VERSION ?= 3.1.1
 
 # Default bundle image tag
 IMAGE_TAG_BASE ?= quay.io/project-koku/koku-metrics-operator
@@ -137,6 +137,12 @@ lint: ## Run pre-commit
 vet: ## Run go vet against code.
 	go vet ./...
 
+.PHONY: vendor
+vendor: ## Run `go mod vendor`.
+	go get -u
+	go mod tidy
+	go mod vendor
+
 .PHONY: verify-manifests
 verify-manifests: ## Verify manifests are up to date.
 	./hack/verify-manifests.sh
@@ -150,7 +156,7 @@ test: manifests generate fmt vet envtest ## Run tests.
 ##@ Build
 
 .PHONY: build
-build: manifests generate fmt vet ## Build manager binary.
+build: manifests generate fmt vet vendor ## Build manager binary.
 	go build -o bin/manager main.go
 
 SECRET_ABSPATH ?= ./testing
@@ -164,9 +170,10 @@ run: manifests generate fmt vet ## Run a controller from your host.
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
+PLATFORM ?= linux/amd64
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG} .
+	$(CONTAINER_TOOL) build --platform=$(PLATFORM) -t ${IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -178,17 +185,14 @@ docker-push: ## Push docker image with the manager.
 # - have enabled BuildKit. More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 # - be able to push the image to your registry (i.e. if you do not set a valid value via IMG=<myregistry/image:<tag>> then the export will fail)
 # To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
-PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
+# PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
+PLATFORMS ?= linux/arm64,linux/amd64
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
-	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
-	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
-	- $(CONTAINER_TOOL) buildx create --name operator-builder --driver-opt image=moby/buildkit:v0.11.6
-	$(CONTAINER_TOOL) buildx use operator-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
+	- $(CONTAINER_TOOL) buildx create --name operator-builder --driver-opt image=moby/buildkit:v0.12.3
+	- $(CONTAINER_TOOL) buildx use operator-builder
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} .
 	- $(CONTAINER_TOOL) buildx rm operator-builder
-	rm Dockerfile.cross
-
 
 ##@ Deployment
 
@@ -209,6 +213,11 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
 
+.PHONY: deploy-to-file
+deploy-to-file: manifests kustomize ## Create a deployment file
+	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	$(KUSTOMIZE) build config/default > testing/deployment.yaml
+
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
 	$(KUSTOMIZE) build config/default | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
@@ -219,6 +228,10 @@ deploy-cr:  ## Deploy a KokuMetricsConfig CR for controller running in K8s clust
 ifeq ($(AUTH), basic)
 	$(MAKE) setup-auth
 	$(MAKE) add-auth
+	oc apply -f testing/authentication_secret.yaml
+else ifeq ($(AUTH), service-account)
+	$(MAKE) setup-sa-auth
+	$(MAKE) add-sa-auth
 	oc apply -f testing/authentication_secret.yaml
 else
 	@echo "Using default token auth"
@@ -236,6 +249,10 @@ deploy-local-cr:  ## Deploy a KokuMetricsConfig CR for controller running on loc
 ifeq ($(AUTH), basic)
 	$(MAKE) setup-auth
 	$(MAKE) add-auth
+	oc apply -f testing/authentication_secret.yaml
+else ifeq ($(AUTH), service-account)
+	$(MAKE) setup-sa-auth
+	$(MAKE) add-sa-auth
 	oc apply -f testing/authentication_secret.yaml
 else
 	@echo "Using default token auth"
@@ -303,13 +320,10 @@ downstream: ## Generate the code changes necessary for the downstream image.
 	# clean up the other files
 	- git clean -fx
 	# mv the sample to the correctly named file
-	cp config/samples/koku-metrics-cfg_v1beta1_kokumetricsconfig.yaml config/samples/costmanagement-metrics-cfg_v1beta1_costmanagementmetricsconfig.yaml
+	- LC_ALL=C find api/v1beta1 config/* docs/* -type f -exec rename -f -- 's/$(UPSTREAM_UPPERCASE)/$(DOWNSTREAM_UPPERCASE)/g' {} +
+	- LC_ALL=C find api/v1beta1 config/* docs/* -type f -exec rename -f -- 's/$(UPSTREAM_LOWERCASE)/$(DOWNSTREAM_LOWERCASE)/g' {} +
 	$(MAKE) generate
 	$(MAKE) manifests
-
-.PHONY: downstream-vendor
-downstream-vendor: ## Run `go mod vendor`.
-	go mod vendor
 
 ##@ Build Dependencies
 
